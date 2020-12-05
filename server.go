@@ -4,18 +4,22 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/http"
 	"sync"
+
+	tnt "github.com/tarantool/go-tarantool"
 )
 
 // like documentation
-type SyslogServerInterface interface {
+type S interface {
 	Start() error
 	Stop() error
+
 	InitAPI()
+	InitDBConn() error
 
 	connect() error
 	closeConnect()
+
 	loop()
 }
 
@@ -26,6 +30,7 @@ type SyslogServer struct {
 	conn     *net.UDPConn
 	connMu   sync.Mutex
 	events   chan<- []byte
+	dbConn   *tnt.Connection
 }
 
 const (
@@ -44,15 +49,15 @@ func NewSyslogServer(host string, udpPort string, httpPort string, events chan<-
 func (srv *SyslogServer) connect() error {
 	udpAddr, err := net.ResolveUDPAddr("udp", srv.udpAddr)
 	if err != nil {
-		return fmt.Errorf("can't resolve UDP addr '%s': %s", srv.udpAddr, err)
+		return fmt.Errorf("can't resolve UDP addr '%s' <%s>", srv.udpAddr, err)
 	}
 
 	srv.conn, err = net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		return fmt.Errorf("can't listen UDP: %s", err)
+		return fmt.Errorf("can't listen UDP <%s>", err)
 	}
 
-	log.Printf("[info] Listen UDP on '%s'", srv.udpAddr)
+	log.Printf("[info] listen UDP on '%s'", srv.udpAddr)
 	return nil
 }
 
@@ -63,7 +68,7 @@ func (srv *SyslogServer) closeConnect() {
 	srv.connMu.Unlock()
 
 	if err != nil {
-		log.Printf("[error] can't close connection: %s", err)
+		log.Printf("[error] can't close udp connection <%s>", err)
 	}
 }
 
@@ -76,7 +81,7 @@ func (srv *SyslogServer) loop() {
 		for {
 			_, _, err := srv.conn.ReadFromUDP(buffer)
 			if err != nil {
-				log.Printf("[error] can't read message from UDP: %s", err)
+				log.Printf("[error] can't read message from UDP <%s>", err)
 				continue
 			}
 			// check STOP signal
@@ -97,7 +102,7 @@ func (srv *SyslogServer) loop() {
 func (srv *SyslogServer) Start() error {
 	srv.connMu.Lock()
 	if srv.conn != nil {
-		return fmt.Errorf("Connection to '%s' already exist", srv.udpAddr)
+		return fmt.Errorf("connection to '%s' already exist", srv.udpAddr)
 	}
 
 	err := srv.connect()
@@ -114,7 +119,7 @@ func (srv *SyslogServer) Start() error {
 func (srv *SyslogServer) Stop() (err error) {
 	srv.connMu.Lock()
 	if srv.conn == nil {
-		err = fmt.Errorf("Connection to '%s' not exist", srv.udpAddr)
+		err = fmt.Errorf("connection to '%s' not exist", srv.udpAddr)
 	}
 	srv.connMu.Unlock()
 
@@ -124,39 +129,4 @@ func (srv *SyslogServer) Stop() (err error) {
 
 	srv.signal <- STOP_SIGNAL
 	return nil
-}
-
-// HTTP API
-func (srv *SyslogServer) startHandler(w http.ResponseWriter, rec *http.Request) {
-	if rec.Method == "POST" {
-		err := srv.Start()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusConflict)
-		} else {
-			fmt.Fprint(w, "OK")
-		}
-	} else {
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-	}
-}
-
-func (srv *SyslogServer) stopHandler(w http.ResponseWriter, rec *http.Request) {
-	if rec.Method == "POST" {
-		err := srv.Stop()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusConflict)
-		} else {
-			fmt.Fprint(w, "OK")
-		}
-	} else {
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-	}
-}
-
-func (srv *SyslogServer) InitAPI() {
-	go func() {
-		http.HandleFunc("/syslog/start", srv.startHandler)
-		http.HandleFunc("/syslog/stop", srv.stopHandler)
-		http.ListenAndServe(srv.httpAddr, nil)
-	}()
 }

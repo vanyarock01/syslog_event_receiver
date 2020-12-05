@@ -12,7 +12,7 @@ import (
 func main() {
 	udpPort := os.Getenv("SYSLOG_PORT")
 	if udpPort == "" {
-		log.Print("[error] ENV variable SYSLOG_PORT not set")
+		log.Print("[panic] ENV variable SYSLOG_PORT not set")
 		os.Exit(1)
 	}
 
@@ -21,24 +21,33 @@ func main() {
 
 	err := srv.Start()
 	if err != nil {
-		log.Printf("[error] %s", err)
-		os.Exit(1)
+		log.Printf("[panic] %s", err)
+		return
 	}
+	defer srv.Stop()
 
 	srv.InitAPI()
+
+	// Run storage
+	err = srv.InitDBConn("127.0.0.1", "3301", "gouser", "secret")
+	if err != nil {
+		log.Printf("[panic] %s", err)
+		return
+	}
+	defer srv.CloseDBConn()
 
 	go func() {
 		// wait few seconds
 		time.Sleep(10 * time.Second)
 		// stop server
 		srv.Stop()
-		log.Printf("[info] Server pause")
+		log.Printf("[info] server pause")
 		time.Sleep(10 * time.Second)
 		srv.Start()
-		log.Printf("[info] Server start")
+		log.Printf("[info] server start")
 	}()
 
 	for event := range events {
-		log.Printf("[info] Receive event: %s", string(event))
+		log.Printf("[info] receive event: %s", string(event))
 	}
 }
