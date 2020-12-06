@@ -1,6 +1,7 @@
 package syslog_event_receiver
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net"
@@ -19,6 +20,7 @@ type S interface {
 
 	connect() error
 	closeConnect()
+	CloseDBConn()
 
 	loop()
 }
@@ -29,7 +31,6 @@ type SyslogServer struct {
 	signal   chan int
 	conn     *net.UDPConn
 	connMu   sync.Mutex
-	events   chan<- []byte
 	dbConn   *tnt.Connection
 }
 
@@ -37,12 +38,11 @@ const (
 	STOP_SIGNAL = iota
 )
 
-func NewSyslogServer(host string, udpPort string, httpPort string, events chan<- []byte) *SyslogServer {
+func NewSyslogServer(host string, udpPort string, httpPort string) *SyslogServer {
 	return &SyslogServer{
 		udpAddr:  fmt.Sprintf("%s:%s", host, udpPort),
 		httpAddr: fmt.Sprintf("%s:%s", host, httpPort),
 		signal:   make(chan int),
-		events:   events,
 	}
 }
 
@@ -93,8 +93,20 @@ func (srv *SyslogServer) loop() {
 				}
 			default:
 			}
-			// send events to client
-			srv.events <- buffer
+			/* send events to storage
+			may be use another gorutine for processing logs in background
+			but tarantool pretty fast ^_^ */
+			buffer = bytes.Trim(buffer, "\x00")
+			event := NewEvent()
+			Parse(buffer, event)
+
+			if err != nil {
+				log.Printf("[error] can't insert log event to db <%s>", err)
+			}
+
+			log.Printf("[info] event message <%s>", event.Message())
+
+			err = srv.insertEvent(event)
 		}
 	}()
 }

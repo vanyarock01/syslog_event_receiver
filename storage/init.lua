@@ -3,23 +3,32 @@ box.cfg{
     vinyl_dir = '/var/lib/tarantool',
     wal_dir = '/var/lib/tarantool',
     listen = 3301,
+    username = 'gouser',
 }
 
 local s = box.schema.space.create('syslog', {
     engine = 'vinyl',
     format = {
-        {name = 'id', type = 'number'},
+        {name = 'id',        type = 'unsigned'},
         {name = 'timestamp', type = 'number'},
-        {name = 'raw', type = 'string'},
+        {name = 'message',   type = 'string'},
+        {name = 'hostname',  type = 'string', is_nullable = true},
+        {name = 'priority',  type = 'number', is_nullable = true},
+        {name = 'program',   type = 'string', is_nullable = true},
+        {name = 'pid',       type = 'number', is_nullable = true},
+        {name = 'sequence',  type = 'number', is_nullable = true},
     },
     if_not_exists = true,
 })
 
+local seq = box.schema.sequence.create('id', {if_not_exists = true})
+
 s:create_index('primary', {
+    sequence = seq,
     type = 'TREE',
     unique = true,
     parts = {
-        {field = 1, type = 'number'},
+        {field = 1, type = 'unsigned'},
     },
     if_not_exists = true,
 })

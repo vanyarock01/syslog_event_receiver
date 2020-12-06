@@ -16,8 +16,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	events := make(chan []byte, 1024)
-	srv := syslog.NewSyslogServer("127.0.0.1", udpPort, "8081", events)
+	srv := syslog.NewSyslogServer("127.0.0.1", udpPort, "8081")
 
 	err := srv.Start()
 	if err != nil {
@@ -47,7 +46,8 @@ func main() {
 		log.Printf("[info] server start")
 	}()
 
-	for event := range events {
-		log.Printf("[info] receive event: %s", string(event))
+	for {
+		/* do nothing */
 	}
+
 }

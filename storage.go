@@ -3,8 +3,13 @@ package syslog_event_receiver
 import (
 	"fmt"
 	"log"
+	"time"
 
 	tnt "github.com/tarantool/go-tarantool"
+)
+
+type (
+	Tuple = []interface{}
 )
 
 func (srv *SyslogServer) InitDBConn(host string, port string, user string, pass string) error {
@@ -28,4 +33,24 @@ func (srv *SyslogServer) CloseDBConn() {
 	} else {
 		log.Printf("[info] close connection to DB")
 	}
+}
+
+func (srv *SyslogServer) insertEvent(event *Event) error {
+	defaultLoc, _ := time.LoadLocation("UTC")
+
+	t := Tuple{
+		nil,                                    // auto id
+		event.Timestamp(defaultLoc).UnixNano(), // required timestamp
+		event.Message(),                        // may be empty, why not
+		event.Hostname(),
+		event.Priority(),
+		event.Program(),
+		event.Pid(),
+		event.Sequence(),
+	}
+	log.Printf("[debug] insert tuple <%v>", t)
+
+	_, err := srv.dbConn.Insert("syslog", t)
+
+	return err
 }
