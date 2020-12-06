@@ -8,34 +8,46 @@ import (
 	tnt "github.com/tarantool/go-tarantool"
 )
 
-type (
-	Tuple = []interface{}
-)
+type DB interface {
+	Connect(string, string, Opts) error
+	Close() error
+	InsertEvent(*Event) error
+}
 
-func (srv *SyslogServer) InitDBConn(host string, port string, user string, pass string) error {
+type Tuple []interface{}
+type Opts map[string]interface{}
+
+type TntDB struct {
+	conn *tnt.Connection
+}
+
+func NewTntDB() *TntDB {
+	return &TntDB{nil}
+}
+
+func (db *TntDB) Connect(host string, port string, opts Opts) error {
 	addr := fmt.Sprintf("%s:%s", host, port)
-	conn, err := tnt.Connect(addr, tnt.Opts{User: user, Pass: pass})
+
+	conn, err := tnt.Connect(addr, tnt.Opts{
+		User: opts["user"].(string),
+		Pass: opts["pass"].(string),
+	})
 
 	if err != nil {
 		return fmt.Errorf("can't connect to DB on '%s' <%s>", addr, err)
 	}
 
 	log.Printf("[info] connected to Tarantool DB on '%s'", addr)
-	srv.dbConn = conn
+	db.conn = conn
 
 	return nil
 }
 
-func (srv *SyslogServer) CloseDBConn() {
-	err := srv.dbConn.Close()
-	if err != nil {
-		log.Printf("[error] can't close connection to DB <%s>", err)
-	} else {
-		log.Printf("[info] close connection to DB")
-	}
+func (db *TntDB) Close() error {
+	return db.conn.Close()
 }
 
-func (srv *SyslogServer) insertEvent(event *Event) error {
+func (db *TntDB) InsertEvent(event *Event) error {
 	defaultLoc, _ := time.LoadLocation("UTC")
 
 	t := Tuple{
@@ -50,7 +62,7 @@ func (srv *SyslogServer) insertEvent(event *Event) error {
 	}
 	log.Printf("[debug] insert tuple <%v>", t)
 
-	_, err := srv.dbConn.Insert("syslog", t)
+	_, err := db.conn.Insert("syslog", t)
 
 	return err
 }

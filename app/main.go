@@ -28,7 +28,8 @@ func main() {
 	srv.InitAPI()
 
 	// Run storage
-	err = srv.InitDBConn("127.0.0.1", "3301", "gouser", "secret")
+	err = srv.InitDBConn("127.0.0.1", "3301", syslog.Opts{"user": "gouser", "pass": "secret"})
+
 	if err != nil {
 		log.Printf("[panic] %s", err)
 		return

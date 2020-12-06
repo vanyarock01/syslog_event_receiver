@@ -6,24 +6,7 @@ import (
 	"log"
 	"net"
 	"sync"
-
-	tnt "github.com/tarantool/go-tarantool"
 )
-
-// like documentation
-type S interface {
-	Start() error
-	Stop() error
-
-	InitAPI()
-	InitDBConn() error
-
-	connect() error
-	closeConnect()
-	CloseDBConn()
-
-	loop()
-}
 
 type SyslogServer struct {
 	udpAddr  string
@@ -31,7 +14,7 @@ type SyslogServer struct {
 	signal   chan int
 	conn     *net.UDPConn
 	connMu   sync.Mutex
-	dbConn   *tnt.Connection
+	db       DB
 }
 
 const (
@@ -43,6 +26,7 @@ func NewSyslogServer(host string, udpPort string, httpPort string) *SyslogServer
 		udpAddr:  fmt.Sprintf("%s:%s", host, udpPort),
 		httpAddr: fmt.Sprintf("%s:%s", host, httpPort),
 		signal:   make(chan int),
+		db:       NewTntDB(),
 	}
 }
 
@@ -100,13 +84,12 @@ func (srv *SyslogServer) loop() {
 			event := NewEvent()
 			Parse(buffer, event)
 
+			log.Printf("[info] event message <%s>", event.Message())
+
+			err = srv.db.InsertEvent(event)
 			if err != nil {
 				log.Printf("[error] can't insert log event to db <%s>", err)
 			}
-
-			log.Printf("[info] event message <%s>", event.Message())
-
-			err = srv.insertEvent(event)
 		}
 	}()
 }
@@ -141,4 +124,20 @@ func (srv *SyslogServer) Stop() (err error) {
 
 	srv.signal <- STOP_SIGNAL
 	return nil
+}
+
+func (srv *SyslogServer) InitDBConn(host string, port string, opts map[string]interface{}) error {
+	err := srv.db.Connect(host, port, opts)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (srv *SyslogServer) CloseDBConn() {
+	err := srv.db.Close()
+	if err != nil {
+		log.Printf("[error] can't close connection to DB <%s>", err)
+	}
 }
